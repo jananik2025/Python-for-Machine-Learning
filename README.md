@@ -36,17 +36,6 @@ matplotlib & seaborn (Visualization)
 
 scikit-learn (Machine learning)
 
-📦 Installation
-
-Clone the repository:
-
-git clone [https://github.com/yourusername/knn-iris-enhanced.git](https://github.com/yourusername/knn-iris-enhanced.git)
-
-
-Install dependencies:
-
-pip install pandas numpy matplotlib seaborn scikit-learn
-
 
 ▶️ Usage
 
