@@ -1,0 +1,182 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from matplotlib.colors import ListedColormap
+
+# Set visualization style
+sns.set_theme(style="whitegrid")
+
+def load_and_explore_data():
+    """
+    Loads the Iris dataset and performs basic EDA.
+    """
+    print("--- Loading Data ---")
+    iris = load_iris()
+    X = iris.data
+    y = iris.target
+    feature_names = iris.feature_names
+    target_names = iris.target_names
+
+    # Convert to DataFrame for easier inspection
+    df = pd.DataFrame(X, columns=feature_names)
+    df['species'] = [target_names[i] for i in y]
+
+    print(f"Dataset shape: {df.shape}")
+    print(df.head())
+
+    # Visualization: Pairplot
+    print("\nGenerating Pairplot...")
+    plt.figure(figsize=(10, 8))
+    sns.pairplot(df, hue='species', palette='husl', markers=["o", "s", "D"])
+    plt.suptitle("Pairplot of Iris Dataset", y=1.02)
+    plt.show()
+
+    return X, y, feature_names, target_names
+
+def prepare_data(X, y):
+    """
+    Splits and scales the data for KNN classification.
+    """
+    print("\n--- Preparing Data ---")
+    # Stratify ensures the class distribution is preserved in train/test splits
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
+
+    # Scaling (CRITICAL for KNN)
+    # KNN uses distance logic. If one feature has a range 0-1000 and another 0-1,
+    # the distance will be biased. Scaling standardizes them.
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    print("Data split into training and testing sets, and scaled.")
+    return X_train_scaled, X_test_scaled, y_train, y_test, scaler
+
+def find_optimal_k(X_train, y_train):
+    """
+    Uses the Elbow Method to find the optimal K value by plotting Error Rate vs K.
+    """
+    print("\n--- Finding Optimal K (Elbow Method) ---")
+    error_rate = []
+
+    # Check K values from 1 to 40 using 5-fold cross-validation
+    for i in range(1, 40):
+        knn = KNeighborsClassifier(n_neighbors=i)
+        score = cross_val_score(knn, X_train, y_train, cv=5, scoring='accuracy').mean()
+        error_rate.append(1 - score)
+
+    # Plot Error Rate vs K
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, 40), error_rate, color='blue', linestyle='dashed', marker='o',
+             markerfacecolor='red', markersize=10)
+    plt.title('Error Rate vs. K Value (5-Fold CV)')
+    plt.xlabel('K')
+    plt.ylabel('Error Rate')
+    plt.show()
+
+    # Find K with minimum error
+    optimal_k = error_rate.index(min(error_rate)) + 1
+    print(f"Optimal K found via Cross-Validation: {optimal_k}")
+    return optimal_k
+
+def train_and_evaluate_model(X_train_scaled, X_test_scaled, y_train, y_test, target_names):
+    """
+    Trains the KNN model using GridSearchCV and evaluates its performance.
+    """
+    print("\n--- Training and Evaluating Model ---")
+    # Use GridSearch to find the best K and weights
+    param_grid = {'n_neighbors': np.arange(1, 31), 'weights': ['uniform', 'distance']}
+    knn_grid = GridSearchCV(KNeighborsClassifier(), param_grid, cv=5)
+    knn_grid.fit(X_train_scaled, y_train)
+
+    best_knn = knn_grid.best_estimator_
+    print(f"\nBest parameters found via GridSearch: {knn_grid.best_params_}")
+
+    # Predictions
+    y_pred = best_knn.predict(X_test_scaled)
+
+    # Evaluation
+    print("\n--- Classification Report ---")
+    print(classification_report(y_test, y_pred, target_names=target_names))
+    print(f"Accuracy Score: {accuracy_score(y_test, y_pred):.4f}")
+
+    # Confusion Matrix Visualization
+    cm = confusion_matrix(y_test, y_pred)
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                xticklabels=target_names, yticklabels=target_names)
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.title('Confusion Matrix')
+    plt.show()
+
+    return best_knn
+
+def plot_decision_boundaries(X, y, feature_names, target_names, n_neighbors):
+    """
+    Plots decision boundaries using the two most significant features (Petal Length/Width).
+    """
+    print("\n--- Plotting Decision Boundaries ---")
+
+    # We slice the data to use only Petal Length (index 2) and Petal Width (index 3)
+    # for 2D visualization purposes.
+    X_vis = X[:, [2, 3]]
+    y_vis = y
+
+    # Create color maps
+    cmap_light = ListedColormap(['#FFAAAA', '#AAFFAA', '#AAAAFF'])
+    cmap_bold = ListedColormap(['#FF0000', '#00FF00', '#0000FF'])
+
+    clf = KNeighborsClassifier(n_neighbors=n_neighbors)
+    clf.fit(X_vis, y_vis)
+
+    # Calculate min, max and limits
+    x_min, x_max = X_vis[:, 0].min() - 1, X_vis[:, 0].max() + 1
+    y_min, y_max = X_vis[:, 1].min() - 1, X_vis[:, 1].max() + 1
+    xx, yy = np.meshgrid(np.arange(x_min, x_max, 0.02),
+                         np.arange(y_min, y_max, 0.02))
+
+    # Predict class for each point in the mesh
+    Z = clf.predict(np.c_[xx.ravel(), yy.ravel()])
+    Z = Z.reshape(xx.shape)
+
+    plt.figure(figsize=(10, 6))
+    plt.contourf(xx, yy, Z, cmap=cmap_light)
+
+    # Plot also the training points
+    sns.scatterplot(x=X_vis[:, 0], y=X_vis[:, 1], hue=[target_names[i] for i in y_vis],
+                    palette=['red', 'green', 'blue'], edgecolor="black", s=100, alpha=0.8)
+
+    plt.title(f"KNN Decision Boundaries (k={n_neighbors})")
+    plt.xlabel(feature_names[2])
+    plt.ylabel(feature_names[3])
+    plt.legend(title='Species')
+    plt.show()
+
+def main():
+    # 1. Load Data
+    X, y, feature_names, target_names = load_and_explore_data()
+
+    # 2. Prepare Data (Split and Scale)
+    X_train_scaled, X_test_scaled, y_train, y_test, scaler = prepare_data(X, y)
+
+    # 3. Find Best K (Elbow Method)
+    # The elbow method provides an initial intuition, but GridSearch is more robust.
+    optimal_k_elbow = find_optimal_k(X_train_scaled, y_train)
+
+    # 4. Train and Evaluate Model
+    best_knn_model = train_and_evaluate_model(X_train_scaled, X_test_scaled, y_train, y_test, target_names)
+
+    # 5. Visualizing Decision Boundaries
+    # Note: We pass original X (unscaled) to the viz function for interpretable axes,
+    # but strictly speaking, the model inside the viz function should also pipeline scaling.
+    # For simplicity in 2D demo, we often just retrain on raw 2D data or scaled 2D data.
+    # Here we will just use the raw features for a clear "Petal Length vs Width" plot.
+    plot_decision_boundaries(X, y, feature_names, target_names, n_neighbors=best_knn_model.n_neighbors)
+
+if __name__ == "__main__":
+    main()
